@@ -11,9 +11,6 @@ VERSION = "1.2"
 # ----------------------------------------------------------------------
 # Python packages from setup.py `packages=[...]`. Recursive globs pick up
 # every declared subpackage (config.plugins.auto, show.plugins.auto, etc).
-# Note: son624 has additional downstream packages (platformspec, serial,
-# switch, switch/minigraph_tool, swsssdkV2). son629 upstream setup.py
-# doesn't include those.
 # ----------------------------------------------------------------------
 _PACKAGE_GLOBS = [
     "acl_loader/**/*.py",
