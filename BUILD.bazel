@@ -1,4 +1,5 @@
-load("@aspect_rules_py//py:defs.bzl", "py_library")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+load("@aspect_rules_py//py:defs.bzl", "py_binary", "py_library")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_python//python:packaging.bzl", "py_wheel")
 load("@tar.bzl", "mutate", "tar")
@@ -398,4 +399,86 @@ genrule(
     outs = ["install.tar.gz"],
     cmd = "cat $(location :python_files) $(location :scripts_bin) > $@",
     visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# sonic-utilities-data — bash completions for the CLI entry points plus the
+# runtime j2 templates.
+#
+# The legacy build runs sonic-utilities-data/generate_completions.py, which
+# imports every entry point so click can source() its completion. That needs
+# the whole CLI importable at build time, while the emitted text is just
+# click's fixed bash template with the program name substituted — so emit it
+# directly (gen_completion.py, verified byte-identical against the Make deb
+# for plain, hyphenated and underscored names alike).
+# =============================================================================
+_UTIL_COMPLETIONS = [
+    "acl-loader",
+    "config",
+    "connect",
+    "consutil",
+    "crm",
+    "dump",
+    "pcieutil",
+    "pddf_fanutil",
+    "pddf_ledutil",
+    "pddf_psuutil",
+    "pddf_thermalutil",
+    "pfc",
+    "pfcwd",
+    "rexec",
+    "rshell",
+    "show",
+    "sonic-clear",
+    "sonic-cli-gen",
+    "sonic-installer",
+    "sonic-package-manager",
+    "sonic_installer",
+    "spm",
+    "watchdogutil",
+]
+
+# Target names are indexed rather than derived from the program name: the entry
+# points include both `sonic-installer` and `sonic_installer`, which would
+# normalise to the same label.
+py_binary(
+    name = "gen_completion",
+    srcs = ["sonic-utilities-data/gen_completion.py"],
+    main = "sonic-utilities-data/gen_completion.py",
+)
+
+[
+    genrule(
+        name = "completion_%d" % i,
+        outs = ["completions/" + c],
+        cmd = "$(execpath :gen_completion) " + c + " $@",
+        tools = [":gen_completion"],
+    )
+    for i, c in enumerate(_UTIL_COMPLETIONS)
+]
+
+sonic_deb(
+    name = "sonic-utilities-data_1.0-1_all.deb",
+    architecture = "all",
+    content = {
+        "/etc/bash_completion.d:*:0644": [
+            ":completion_%d" % i
+            for i, c in enumerate(_UTIL_COMPLETIONS)
+        ],
+        "/usr/share/sonic/templates:sonic-utilities-data/templates:0644": [
+            "sonic-utilities-data/templates/dump.sh.j2",
+            "sonic-utilities-data/templates/service_mgmt.sh.j2",
+            "sonic-utilities-data/templates/sonic-environment.j2",
+            "sonic-utilities-data/templates/sonic.service.j2",
+            "sonic-utilities-data/templates/sonic-cli-gen/common.j2",
+            "sonic-utilities-data/templates/sonic-cli-gen/config.py.j2",
+            "sonic-utilities-data/templates/sonic-cli-gen/show.py.j2",
+        ],
+    },
+    description = "SONiC utilities data",
+    maintainer = "Sonic <sonic@microsoft.com>",
+    package = "sonic-utilities-data",
+    priority = "optional",
+    section = "misc",
+    version = "1.0-1",
 )

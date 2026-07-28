@@ -3,8 +3,10 @@ module(
     version = "1.2",
 )
 
-# Pure Python wheel: no cc, no apt, no patches.
+# The wheel itself is pure Python (no cc, no apt, no patches);
+# sonic-utilities-data packages the CLI completions + j2 templates via sonic_deb.
 bazel_dep(name = "rules_python", version = "1.7.0")
 bazel_dep(name = "aspect_rules_py", version = "1.11.7")
 bazel_dep(name = "tar.bzl", version = "0.8.1")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
