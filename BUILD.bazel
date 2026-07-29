@@ -581,3 +581,7 @@ sonic_deb(
     section = "misc",
     version = "1.0-1",
 )
+
+# sonic-package-manager renders this per built-in package at install time; the
+# rootfs layer needs the label to reproduce that for dhcp_relay and macsec.
+exports_files(["sonic-utilities-data/templates/service_mgmt.sh.j2"])
