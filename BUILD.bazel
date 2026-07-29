@@ -384,20 +384,119 @@ tar(
     ),
 )
 
+# setup.py's entry_points['console_scripts']. `pip install` generates one
+# wrapper per entry under /usr/local/bin; this package vendors
+# `fastentrypoints`, which replaces setuptools' slow pkg_resources-based
+# template with the direct-import form below (verified byte-identical to the
+# wrappers in Make's image). Without these, `config`, `show`, `sfputil`,
+# `sonic-installer` and 28 more core CLI commands simply do not exist.
+_CONSOLE_SCRIPTS = {
+    "acl-loader": "acl_loader.main:cli",
+    "config": "config.main:config",
+    "connect": "connect.main:connect",
+    "consutil": "consutil.main:consutil",
+    "counterpoll": "counterpoll.main:cli",
+    "crm": "crm.main:cli",
+    "debug": "debug.main:cli",
+    "dump": "dump.main:dump",
+    "filter_fdb_entries": "fdbutil.filter_fdb_entries:main",
+    "pfcwd": "pfcwd.main:cli",
+    "sfputil": "sfputil.main:cli",
+    "ssdutil": "ssdutil.main:ssdutil",
+    "pfc": "pfc.main:cli",
+    "psuutil": "psuutil.main:cli",
+    "fwutil": "fwutil.main:cli",
+    "pcieutil": "pcieutil.main:cli",
+    "pddf_fanutil": "pddf_fanutil.main:cli",
+    "pddf_psuutil": "pddf_psuutil.main:cli",
+    "pddf_thermalutil": "pddf_thermalutil.main:cli",
+    "pddf_ledutil": "pddf_ledutil.main:cli",
+    "rexec": "rcli.rexec:cli",
+    "rshell": "rcli.rshell:cli",
+    "show": "show.main:cli",
+    "sonic-clear": "clear.main:cli",
+    "sonic-installer": "sonic_installer.main:sonic_installer",
+    # Deprecated alias, still shipped by setup.py.
+    "sonic_installer": "sonic_installer.main:sonic_installer",
+    "sonic-package-manager": "sonic_package_manager.main:cli",
+    "spm": "sonic_package_manager.main:cli",
+    "undebug": "undebug.main:cli",
+    "watchdogutil": "watchdogutil.main:watchdogutil",
+    "sonic-cli-gen": "sonic_cli_gen.main:cli",
+}
+
+[
+    write_file(
+        name = "entrypoint_" + name.replace("-", "__"),
+        out = "entrypoints/" + name,
+        content = [
+            "#!/usr/bin/python3",
+            "# -*- coding: utf-8 -*-",
+            "import re",
+            "import sys",
+            "from {} import {}".format(target.split(":")[0], target.split(":")[1]),
+            "if __name__ == '__main__':",
+            "    sys.argv[0] = re.sub(r'(-script\\.pyw|\\.exe)?$', '', sys.argv[0])",
+            "    sys.exit({}())".format(target.split(":")[1]),
+            # write_file joins with newline but adds no trailing one; pip's
+            # wrappers end with a newline, so add an empty final element.
+            "",
+        ],
+        newline = "unix",
+    )
+    for name, target in _CONSOLE_SCRIPTS.items()
+]
+
 tar(
-    name = "scripts_bin",
-    srcs = _SCRIPTS + ["ssd-dump/vtFA_RTK_5766_v2"],
+    name = "entrypoints_bin",
+    srcs = [
+        ":entrypoint_" + n.replace("-", "__")
+        for n in _CONSOLE_SCRIPTS
+    ],
     mutate = mutate(
         package_dir = "/usr/local/bin",
-        strip_prefix = package_name() + "/scripts",
+        strip_prefix = "entrypoints",
     ),
+)
+
+# setuptools' `scripts=` install step rewrites ANY python shebang -- bare
+# `python`, `python3`, with or without `env`, with or without a space after
+# `#!` -- to the absolute interpreter it is building for (#!/usr/bin/python3).
+# Non-python scripts (#!/bin/bash etc.) are left alone. Reproduce that so the
+# installed scripts match Make's byte for byte.
+genrule(
+    name = "scripts_shebang",
+    srcs = _SCRIPTS + ["ssd-dump/vtFA_RTK_5766_v2"],
+    outs = ["scripts_fixed.tar"],
+    cmd = ("set -euo pipefail; W=$$(mktemp -d); trap 'rm -rf $$W' EXIT; " +
+           "for f in $(SRCS); do " +
+           "  sed -E '1s@^#!\\s*/usr/bin/(env +)?python[0-9.]*\\s*$$@#!/usr/bin/python3@' " +
+           "    \"$$f\" > $$W/$$(basename $$f); " +
+           "  chmod 755 $$W/$$(basename $$f); " +
+           "done; " +
+           "tar -cf $@ --owner=0 --group=0 --numeric-owner --sort=name -C $$W ."),
+)
+
+alias(
+    name = "scripts_bin",
+    actual = ":scripts_shebang",
 )
 
 genrule(
     name = "install",
-    srcs = [":python_files", ":scripts_bin"],
+    srcs = [":python_files", ":scripts_bin", ":entrypoints_bin"],
     outs = ["install.tar.gz"],
-    cmd = "cat $(location :python_files) $(location :scripts_bin) > $@",
+    # NOT `cat a.tar.gz b.tar.gz`: that produces two concatenated gzip members
+    # whose tar payloads each end in an end-of-archive marker, so every reader
+    # stops after the first one (the /usr/local/bin half was silently dropped).
+    # Unpack both into one dir and repack as a single stream instead.
+    cmd = ("set -euo pipefail; W=$$(mktemp -d); " +
+           "trap 'rm -rf $$W' EXIT; " +
+           "mkdir -p $$W/usr/local/bin; " +
+           "tar -xzf $(location :python_files) -C $$W; " +
+           "tar -xf $(location :scripts_bin) -C $$W/usr/local/bin; " +
+           "tar -xzf $(location :entrypoints_bin) -C $$W; " +
+           "tar -czf $@ --owner=0 --group=0 --numeric-owner --sort=name -C $$W ."),
     visibility = ["//visibility:public"],
 )
 
