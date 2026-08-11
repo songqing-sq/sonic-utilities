@@ -1,0 +1,65 @@
+# Bazel-only manifest: feeds the aspect_rules_py uv extension (MODULE.bazel)
+# with the pytest test deps. Does NOT drive the wheel build (py_wheel mirrors
+# setup.py; Make keeps using setup.py directly).
+#
+# Mirrors setup.py tests_require + the install_requires the imported code needs.
+# C-extension packages that PyPI ships sdist-only and the hermetic sandbox
+# cannot build (m2crypto, ...) are handled separately via apt if any suite
+# turns out to need them; start with the pip-installable set and add as the
+# baseline run reveals gaps.
+[project]
+name = "sonic-utilities"
+version = "1.0"
+requires-python = ">=3.13"
+dependencies = [
+    # test deps (setup.py tests_require + extras 'testing')
+    "pytest",
+    "pyfakefs",
+    "responses",
+    "mockredispy",
+    "redis",
+    "deepdiff",
+    "mock",
+    # install_requires the imported modules pull in
+    "click",
+    "click-log",
+    "docker",
+    "docker-image-py",
+    "filelock",
+    "enlighten",
+    "ijson",
+    "jinja2",
+    "jsondiff",
+    "jsonpatch",
+    "jsonpointer",
+    "lxml",
+    "pyyaml",
+    "natsort",
+    "netaddr",
+    # netifaces is NOT here: PyPI ships it sdist-only with a C extension, and
+    # aspect_rules_py's sdist_build uses a non-hermetic host compiler that is
+    # absent in this repo (same reason dockers/docker-config-engine-trixie
+    # builds bitarray via http_archive + hermetic GCC). It comes from apt
+    # instead, staged with apt_tree -- see BUILD.bazel.
+    "paramiko",
+    "pexpect",
+    "semantic-version",
+    "prettyprinter",
+    "pyroute2",
+    "requests",
+    "tabulate==0.9.0",
+    "toposort==1.6",
+    "www-authenticate==0.9.2",
+    "xmltodict==0.12.0",
+    "lazy-object-proxy",
+    "six",
+    "scp",
+    "bcrypt",
+    "cryptography",
+    "urllib3",
+    "protobuf",
+    # PEP517 frontend/backend for sdist_build repos (mockredispy is sdist-only);
+    # must be [project] deps so the hub emits their aliases.
+    "build",
+    "setuptools",
+]

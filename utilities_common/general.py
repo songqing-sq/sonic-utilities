@@ -1,5 +1,6 @@
 import importlib.machinery
 import importlib.util
+import os
 import sys
 
 from sonic_py_common import multi_asic
@@ -13,6 +14,17 @@ def load_module_from_source(module_name, file_path):
     This function will load the Python source file specified by <file_path>
     as a module named <module_name> and return an instance of the module
     """
+    # Callers pass installed absolute paths (e.g. /usr/local/bin/sonic-cfggen).
+    # Under a test harness that stages those scripts elsewhere, SONIC_BIN_DIR
+    # names the directory holding them. Only consulted when the original path
+    # is missing, so an installed system behaves exactly as before.
+    if not os.path.exists(file_path):
+        bin_dir = os.environ.get('SONIC_BIN_DIR')
+        if bin_dir:
+            staged = os.path.join(bin_dir, os.path.basename(file_path))
+            if os.path.exists(staged):
+                file_path = staged
+
     loader = importlib.machinery.SourceFileLoader(module_name, file_path)
     spec = importlib.util.spec_from_loader(loader.name, loader)
     module = importlib.util.module_from_spec(spec)
