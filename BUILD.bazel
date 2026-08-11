@@ -608,8 +608,17 @@ apt_tree(
 py_library(
     name = "pytest_lib",
     testonly = True,
-    srcs = glob(["tests/**/*.py"]),
-    data = glob(["tests/**"], exclude = ["tests/**/*.py"]) + [
+    # scripts/*.py are importable modules for the suites (`import route_check`,
+    # `import disk_check`, ...), not just installed executables -- Make sees
+    # them because pytest runs from the source root with scripts/ reachable.
+    srcs = glob(["tests/**/*.py"]) + glob(["scripts/*.py"]),
+    data = glob(["tests/**"], exclude = ["tests/**/*.py"]) + glob(
+        # The extension-less scripts (aclshow, watermarkstat, ...) are invoked
+        # as subprocesses by the CLI paths under test, so they travel as data
+        # too -- glob(["scripts/*.py"]) above only covers the importable ones.
+        ["scripts/**"],
+        exclude = ["scripts/*.py"],
+    ) + [
         ":apt_py",
         # config/*.py load_module_from_source() this by its installed absolute
         # path; SONIC_BIN_DIR (below) redirects them to the staged copy.
@@ -661,6 +670,7 @@ py_library(
             "requests",
             "tabulate",
             "toposort",
+            "www_authenticate",
             "xmltodict",
             "lazy_object_proxy",
             "six",
@@ -673,26 +683,26 @@ py_library(
     ],
 )
 
-# Excluded pending follow-up (93 of 262 suites pass). The wiring is complete --
-# every import resolves -- so what remains is behavioural, in three groups:
-#   * suites whose CLI paths shell out to the installed scripts (watermarkstat,
-#     aclshow, ...) which are not on PATH in the sandbox;
-#   * suites that mock.patch() a bare top-level name (e.g.
-#     "validated_config_db_connector.…") that only resolves under the installed
-#     dist-packages layout;
-#   * pyangbind-dependent suites: setup.py deliberately keeps pyangbind OUT of
-#     install_requires (it drags in enum34, which breaks `re`), and adding it to
-#     the venv regressed three other suites -- so acl_loader stays excluded.
+# Excluded pending follow-up (137 of 262 suites pass). Wiring is complete --
+# every import resolves -- so what remains is behavioural:
+#   * pyangbind-dependent suites CANNOT pass here or under Make: setup.py
+#     deliberately keeps pyangbind out of install_requires (it drags in enum34,
+#     which breaks `re`), and adding it regressed three other suites;
+#   * cli_autogen_* want the installed /usr/local/yang-models tree;
+#   * some CLI paths spawn a subprocess that dies with "Failed to import
+#     encodings module" -- an interpreter/PYTHONHOME mismatch in the child,
+#     still under diagnosis (setting PATH to the venv bin did not help);
+#   * the rest are plain assertion diffs needing per-suite work.
+# NOTE: no trustworthy Make baseline exists locally -- target/python-wheels'
+# sonic_utilities log shows the wheel was built with tests skipped (no pytest
+# session at all), so "how many of these 262 pass under Make" is still unknown.
 # See test_docs/module_log/sonic-utilities_module_log.md.
 _EXCLUDED_TESTS = [
-    "tests/aaa_test.py",
     "tests/acl_loader_test.py",
-    "tests/aclshow_test.py",
     "tests/asic_sdk_health_event_test.py",
     "tests/bgp_aggregate_address_test.py",
     "tests/bgp_test.py",
     "tests/buffer_test.py",
-    "tests/chassis_db_consistency_checker_test.py",
     "tests/chassis_modules_test.py",
     "tests/cli_autogen_test.py",
     "tests/cli_autogen_yang_parser_test.py",
@@ -704,20 +714,12 @@ _EXCLUDED_TESTS = [
     "tests/config_mgmt_test.py",
     "tests/config_mirror_session_test.py",
     "tests/config_override_test.py",
-    "tests/config_snmp_test.py",
     "tests/config_test.py",
     "tests/config_xcvr_test.py",
-    "tests/console_test.py",
     "tests/copp_test.py",
-    "tests/coredump_gen_handler_test.py",
     "tests/crm_dash_test.py",
     "tests/db_migrator_test.py",
-    "tests/decode_syseeprom_test.py",
-    "tests/dhcp_rate_test.py",
-    "tests/disk_check_test.py",
-    "tests/dropconfig_test.py",
     "tests/drops_group_test.py",
-    "tests/dualtor_neighbor_check_test.py",
     "tests/dump_tests/dash_object_test.py",
     "tests/dump_tests/dump_state_test.py",
     "tests/dump_tests/module_tests/acl_test.py",
@@ -748,12 +750,7 @@ _EXCLUDED_TESTS = [
     "tests/fabricstat_test.py",
     "tests/fan_test.py",
     "tests/fast_linkup_test.py",
-    "tests/fast_reboot_dump_test.py",
-    "tests/fast_reboot_filter_routes_test.py",
-    "tests/fast_reboot_test.py",
     "tests/fdbshow_test.py",
-    "tests/feature_test.py",
-    "tests/fetch_routes_chunk_test.py",
     "tests/fibshow_test.py",
     "tests/filter_fdb_input/test_vectors.py",
     "tests/fine_grained_ecmp_test.py",
@@ -775,11 +772,6 @@ _EXCLUDED_TESTS = [
     "tests/interfaces_test.py",
     "tests/intfstat_test.py",
     "tests/intfutil_test.py",
-    "tests/ip_config_test.py",
-    "tests/kube_test.py",
-    "tests/lldp_test.py",
-    "tests/mclag_test.py",
-    "tests/memory_check_handler_test.py",
     "tests/memory_threshold_check_test.py",
     "tests/mmuconfig_test.py",
     "tests/mpls_test.py",
@@ -793,24 +785,16 @@ _EXCLUDED_TESTS = [
     "tests/multi_asic_vlan_test.py",
     "tests/multi_asic_vnet_test.py",
     "tests/multi_asic_watermarkstat_test.py",
-    "tests/nat_test.py",
-    "tests/neighbor_advertiser_test.py",
-    "tests/null_route_helper_test.py",
     "tests/nvgre_tunnel_test.py",
     "tests/passw_hardening_test.py",
     "tests/pbh_test.py",
     "tests/pfcstat_test.py",
     "tests/pgdropstat_test.py",
-    "tests/port2alias_test.py",
-    "tests/portchannel_test.py",
     "tests/portstat_test.py",
-    "tests/psushow_test.py",
     "tests/queue_counter_test.py",
     "tests/queuestat_test.py",
-    "tests/radius_test.py",
     "tests/route_check_test.py",
     "tests/sensor_test.py",
-    "tests/sflow_test.py",
     "tests/sfp_test.py",
     "tests/show_acl_test.py",
     "tests/show_event_counters_test.py",
@@ -820,40 +804,25 @@ _EXCLUDED_TESTS = [
     "tests/sign_and_verify_test.py",
     "tests/single_asic_dropstat_test.py",
     "tests/sku_create_test.py",
-    "tests/sonic_bootchart_test.py",
-    "tests/sonic_dpu_flow_dump_test.py",
     "tests/sonic_error_report_test.py",
     "tests/sonic_kdump_config_test.py",
     "tests/sonic_package_manager/test_cli.py",
-    "tests/sonic_package_manager/test_constraint.py",
-    "tests/sonic_package_manager/test_database.py",
-    "tests/sonic_package_manager/test_manager.py",
-    "tests/sonic_package_manager/test_manifest.py",
-    "tests/sonic_package_manager/test_metadata.py",
-    "tests/sonic_package_manager/test_reference.py",
     "tests/sonic_package_manager/test_registry.py",
-    "tests/sonic_package_manager/test_service_creator.py",
-    "tests/srv6stat_test.py",
-    "tests/storm_control_test.py",
     "tests/swap_allocator_test.py",
     "tests/switchstat_test.py",
-    "tests/synchronous_mode_test.py",
     "tests/syslog_test.py",
     "tests/system_health_test.py",
-    "tests/techsupport_cleanup_test.py",
     "tests/test_aggregate_voq_counters.py",
     "tests/test_sonic_installer.py",
     "tests/tpid_test.py",
     "tests/trimming_test.py",
     "tests/tunnelstat_test.py",
     "tests/vlan_test.py",
-    "tests/vnet_route_check_test.py",
     "tests/vnet_test.py",
     "tests/vrf_test.py",
     "tests/vxlan_test.py",
     "tests/watermarkstat_test.py",
     "tests/wred_queue_counter_test.py",
-    "tests/yang_config_validation_test.py",
 ]
 
 [sonic_py_pytest_test(
@@ -871,6 +840,11 @@ _EXCLUDED_TESTS = [
             # tests dir itself on sys.path -- tests/ is a package, so pytest's
             # prepend import mode only adds the module root.
             "../sonic-utilities+/tests",
+            "../sonic-utilities+/scripts",
+            # Some suites mock.patch("<bare module>.…") for modules that live
+            # inside the config package; mock's _importer does a top-level
+            # __import__, so the package dir itself has to be importable.
+            "../sonic-utilities+/config",
         ]),
         # libyang.so.3 + its pcre2/xxhash closure, same dirs sonic-yang-mgmt
         # enumerates (never a trixie glibc -- py_test runs under the host
